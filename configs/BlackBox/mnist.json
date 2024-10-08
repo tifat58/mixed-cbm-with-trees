@@ -1,0 +1,43 @@
+{
+    "name": "mnist_blackbox",
+    "n_gpu": 1,
+
+    "arch": {
+        "type": "MNISTBlackBoxArchitecture",
+        "args": {}
+    },
+    "model": {
+        "lr": 0.001,
+        "weight_decay": 0
+    },
+    "dataset": {
+        "num_classes": 3,
+        "class_names": ["6", "8", "9"],
+        "contour_plot": false,
+        "use_attribute_imbalance": false
+    },
+    "data_loader": {
+        "type": "get_mnist_dataLoader_original",
+        "args":{
+            "data_dir": "./datasets/MNIST",
+            "type": "SGD",
+            "batch_size": 206
+        }
+    },
+    "trainer": {
+        "type": "BlackBoxXYTrainer",
+        "args": {},
+        "epochs": 20,
+        "save_dir": "saved/",
+        "save_period": 1000,
+        "verbosity": 2,
+        "monitor": "min val_loss",
+        "early_stop": 0,
+        "tensorboard": true
+    },
+    "regularisation": {
+        "type": "L2",
+        "min_samples_leaf": 150,
+        "snapshot_epochs": 50
+    }
+}

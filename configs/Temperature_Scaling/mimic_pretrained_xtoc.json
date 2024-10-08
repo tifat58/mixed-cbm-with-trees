@@ -1,0 +1,57 @@
+{
+    "name": "temperature_scaling_mimic",
+    "n_gpu": 1,
+
+    "arch": {
+        "type": "MIMICBMwithDTaslabelPredictorArchitecture",
+        "args": {}
+    },
+    "model": {
+        "xc_lr": 0.001,
+        "xc_weight_decay": 0,
+        "cy_lr": 0.01,
+        "cy_weight_decay": 0,
+        "pretrained_concept_predictor": "./trained_models/pretrained_xtoc_encoders/mimic/0916_002318/model_best.pth"
+    },
+    "dataset": {
+        "num_classes": 2,
+        "num_concepts": 18,
+        "concept_names": {
+            "respiration": ["normal", "moderate", "severe"],
+            "renal": ["normal", "moderate", "severe"],
+            "coagulation": ["normal", "moderate", "severe"],
+            "liver": ["normal", "moderate", "severe"],
+            "cardiovascular": ["normal", "moderate", "severe"],
+            "cns": ["normal", "moderate", "severe"]
+        },
+        "class_names": ["recovered", "passed away"],
+        "use_attribute_imbalance": false
+    },
+    "data_loader": {
+        "type": "get_mimic_dataLoader",
+        "args":{
+            "data_dir": "",
+            "type": "SGD",
+            "batch_size": 206
+        }
+    },
+    "trainer": {
+        "type": "IndependentCBMTrainer",
+        "hard_cbm": true,
+        "args": {},
+        "xc_epochs": 100,
+        "cy_epochs": 200,
+        "save_dir": "saved/",
+        "save_period": 1000,
+        "verbosity": 2,
+        "monitor": "min val_loss",
+        "early_stop": 0,
+        "tensorboard": true,
+        "save_test_tensors": false
+    },
+    "regularisation": {
+        "type": "None",
+        "min_samples_leaf": 150,
+        "snapshot_epochs": 50
+    }
+}

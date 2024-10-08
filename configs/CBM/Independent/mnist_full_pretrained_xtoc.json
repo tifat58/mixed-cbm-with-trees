@@ -1,0 +1,57 @@
+{
+    "name": "final_cbm_mnist",
+    "n_gpu": 1,
+
+    "arch": {
+        "type": "MNISTCBMArchitecture",
+        "args": {}
+    },
+    "model": {
+        "xc_lr": 0.001,
+        "xc_weight_decay": 0,
+        "cy_lr": 0.01,
+        "cy_weight_decay": 0,
+        "pretrained_concept_predictor": "./trained_models/pretrained_xtoc_encoders/mnist_full/0922_134942/model_best.pth"
+    },
+    "dataset": {
+        "num_classes": 10,
+        "num_concepts": 18,
+        "concept_names": {
+            "thickness": ["small", "medium", "large"],
+            "width": ["small", "medium", "large"],
+            "length": ["small", "medium", "large"],
+            "slant": ["small", "medium", "large"],
+            "area": ["small", "medium", "large"],
+            "height": ["small", "medium", "large"]
+        },
+        "class_names": ["0","1","2","3","4","5","6","7","8","9"],
+        "use_attribute_imbalance": false
+    },
+    "data_loader": {
+        "type": "get_mnist_dataLoader_full",
+        "args":{
+            "data_dir": "./datasets/MNIST",
+            "type": "SGD",
+            "batch_size": 206
+        }
+    },
+    "trainer": {
+        "type": "IndependentCBMTrainer",
+        "hard_cbm": false,
+        "args": {},
+        "xc_epochs": 50,
+        "cy_epochs": 100,
+        "save_dir": "saved/",
+        "save_period": 1000,
+        "verbosity": 2,
+        "monitor": "min val_loss",
+        "early_stop": 0,
+        "tensorboard": true,
+        "save_test_tensors": false
+    },
+    "regularisation": {
+        "type": "None",
+        "min_samples_leaf": 150,
+        "snapshot_epochs": 50
+    }
+}

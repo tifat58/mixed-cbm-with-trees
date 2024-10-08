@@ -1,0 +1,53 @@
+{
+    "name": "final_cbm_mnist",
+    "n_gpu": 1,
+
+    "arch": {
+        "type": "MNISTCBMArchitecture",
+        "args": {}
+    },
+    "model": {
+        "xc_lr": 0.001,
+        "xc_weight_decay": 0,
+        "cy_lr": 0.01,
+        "cy_weight_decay": 0,
+        "pretrained_concept_predictor": "/Users/gouse/PycharmProjects/AR-Imperial-Thesis/logs_and_models_to_show/pretrained_models/mnist_reduced/model_best.pth"
+    },
+    "dataset": {
+        "num_classes": 3,
+        "num_concepts": 12,
+        "concept_names": ["thickness_small", "thickness_medium", "thickness_large", "thickness_xlarge",
+                         "width_small", "width_medium", "width_large", "width_xlarge",
+                         "length_small", "length_medium", "length_large", "length_xlarge"],
+        "class_names": ["6", "8", "9"],
+        "contour_plot": false,
+        "use_attribute_imbalance": false
+    },
+    "data_loader": {
+        "type": "get_mnist_dataLoader_original",
+        "args":{
+            "data_dir": "./datasets/MNIST",
+            "type": "SGD",
+            "batch_size": 8859
+        }
+    },
+    "trainer": {
+        "type": "SequentialCBMTrainer",
+        "hard_cbm": false,
+        "args": {},
+        "xc_epochs": 100,
+        "cy_epochs": 200,
+        "save_dir": "saved/",
+        "save_period": 1000,
+        "verbosity": 2,
+        "monitor": "min val_loss",
+        "early_stop": 0,
+        "tensorboard": true,
+        "save_test_tensors": false
+    },
+    "regularisation": {
+        "type": "None",
+        "min_samples_leaf": 150,
+        "snapshot_epochs": 50
+    }
+}

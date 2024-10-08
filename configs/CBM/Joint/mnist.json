@@ -1,0 +1,49 @@
+{
+    "name": "joint_cbm_mnist_reduced",
+    "n_gpu": 1,
+
+    "arch": {
+        "type": "MNISTCBMArchitecture",
+        "args": {}
+    },
+    "model": {
+        "lr": 0.001,
+        "weight_decay": 0,
+        "alpha": 1
+    },
+    "dataset": {
+        "num_classes": 3,
+        "num_concepts": 9,
+        "concept_names": {
+            "thickness": ["small", "medium", "large"],
+            "width": ["small", "medium", "large"],
+            "length": ["small", "medium", "large"]
+        },
+        "class_names": ["6", "8", "9"],
+        "use_attribute_imbalance": false
+    },
+    "data_loader": {
+        "type": "get_mnist_dataLoader_original",
+        "args":{
+            "data_dir": "./datasets/MNIST",
+            "type": "SGD",
+            "batch_size": 206
+        }
+    },
+    "trainer": {
+        "type": "JointCBMTrainer",
+        "args": {},
+        "epochs": 500,
+        "save_dir": "saved/",
+        "save_period": 1000,
+        "verbosity": 2,
+        "monitor": "min val_loss",
+        "early_stop": 0,
+        "tensorboard": true
+    },
+    "regularisation": {
+        "type": "None",
+        "min_samples_leaf": 150,
+        "snapshot_epochs": 50
+    }
+}
