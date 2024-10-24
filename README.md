@@ -1,5 +1,5 @@
 # Tree-Based Leakage Inspection and Control in Concept Bottleneck Models    
-### MSc Project by Angelos Ragkousis
+### Angelos Ragkousis, Sonali Parbhoo
 
 ![Alt text](images/Paper_Main_Drawing.drawio.png)
 
