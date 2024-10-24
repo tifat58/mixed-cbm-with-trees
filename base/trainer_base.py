@@ -12,8 +12,7 @@ class TrainerBase:
 
     def __init__(self, arch, config, expert=None):
         self.config = config
-        self.logger = config.get_logger('trainer',
-                                        config['trainer']['verbosity'])
+        self.logger = config.get_logger('trainer', config['trainer']['verbosity'])
 
         self.arch = arch
         self.model = arch.model

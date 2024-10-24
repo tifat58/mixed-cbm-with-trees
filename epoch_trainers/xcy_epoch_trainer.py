@@ -45,11 +45,6 @@ class XCY_Epoch_Trainer(EpochTrainerBase):
 
         self.do_validation = self.val_loader is not None
         self.acc_metrics_location = self.config.dir + "/accumulated_metrics.pkl"
-        self.hard_concepts = self.arch.hard_concepts
-        self.soft_concepts = [i for i in range(self.num_concepts) if i not in self.hard_concepts]
-
-        combined_indices = self.hard_concepts + self.soft_concepts
-        self.sorted_concept_indices = torch.argsort(torch.tensor(combined_indices))
 
         # check if selective net is used
         if "selectivenet" in config.config.keys():
@@ -91,13 +86,9 @@ class XCY_Epoch_Trainer(EpochTrainerBase):
         with tqdm(total=len(self.train_loader), file=sys.stdout) as t:
             for batch_idx, (X_batch, C_batch, y_batch) in enumerate(self.train_loader):
 
-                C_hard = C_batch[:, self.hard_concepts]
-
                 batch_size = X_batch.size(0)
                 X_batch = X_batch.to(self.device)
-                C_hard = C_hard.to(self.device)
                 C_batch = C_batch.to(self.device)
-
                 y_batch = y_batch.to(self.device)
 
                 # Forward pass
@@ -109,10 +100,7 @@ class XCY_Epoch_Trainer(EpochTrainerBase):
                     preds=C_pred_soft.detach().cpu(), labels=C_batch.detach().cpu()
                 )
                 # C_pred_soft = torch.sigmoid(C_pred_soft)
-                C_pred_soft = sigmoid_or_softmax_with_groups(C_pred_soft, self.concept_names)
-
-                C_pred_concat = torch.cat((C_hard, C_pred_soft), dim=1)
-                C_pred = C_pred_concat[:, self.sorted_concept_indices]
+                C_pred = sigmoid_or_softmax_with_groups(C_pred_soft, self.concept_names)
                 tensor_C_pred = torch.cat((tensor_C_pred, C_pred), dim=0)
                 y_pred = self.model.label_predictor(C_pred)
                 tensor_y_pred = torch.cat((tensor_y_pred, y_pred), dim=0)
@@ -212,13 +200,9 @@ class XCY_Epoch_Trainer(EpochTrainerBase):
             with tqdm(total=len(self.val_loader), file=sys.stdout) as t:
                 for batch_idx, (X_batch, C_batch, y_batch) in enumerate(self.val_loader):
 
-                    C_hard = C_batch[:, self.hard_concepts]
-
                     batch_size = X_batch.size(0)
                     X_batch = X_batch.to(self.device)
                     C_batch = C_batch.to(self.device)
-
-                    C_hard = C_hard.to(self.device)
                     y_batch = y_batch.to(self.device)
 
                     # Forward pass
@@ -230,10 +214,7 @@ class XCY_Epoch_Trainer(EpochTrainerBase):
                         preds=C_pred_soft.detach().cpu(), labels=C_batch.detach().cpu()
                     )
                     # C_pred_soft = torch.sigmoid(C_pred_soft)
-                    C_pred_soft = sigmoid_or_softmax_with_groups(C_pred_soft, self.concept_names)
-
-                    C_pred_concat = torch.cat((C_hard, C_pred_soft), dim=1)
-                    C_pred = C_pred_concat[:, self.sorted_concept_indices]
+                    C_pred = sigmoid_or_softmax_with_groups(C_pred_soft, self.concept_names)
                     tensor_C_pred = torch.cat((tensor_C_pred, C_pred), dim=0)
                     y_pred = self.model.label_predictor(C_pred)
                     tensor_y_pred = torch.cat((tensor_y_pred, y_pred), dim=0)

@@ -51,11 +51,11 @@ class XC_Epoch_Trainer(EpochTrainerBase):
         print("Device: ", self.device)
 
         self.optimizer = arch.xc_optimizer
-        for state in self.optimizer.state.values():
-            for k, v in state.items():
-                if isinstance(v, torch.Tensor):
-                    state[k] = v.to(self.device)
-
+        if self.optimizer is not None:
+            for state in self.optimizer.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = v.to(self.device)
 
     def _train_epoch(self, epoch):
 
