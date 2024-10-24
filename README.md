@@ -17,7 +17,7 @@ As AI models grow larger, the demand for accountability and interpretability has
 Steps to set up the environment and install dependencies:
 1. Clone the repository:
     ```bash
-    git clone https://github.com/ai4ai-lab/mixed_cbms_with_trees.git
+    git clone https://github.com/ai4ai-lab/mixed-cbm-with-trees.git
     cd your-repo
     ```
 2. Create and activate a virtual environment:
