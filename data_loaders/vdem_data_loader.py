@@ -6,7 +6,7 @@ from torch.nn.functional import one_hot
 
 
 def load_vDem(base_dir='./data'):
-    data = pd.read_csv(f'./datasets/vDem/V-Dem-CY-Core-v10.csv')
+    data = pd.read_csv(f'/Users/gouse/PycharmProjects/mixed_cbms_with_trees/datasets/vDem/V-Dem-CY-Core-v10.csv')
     data['country_name_year'] = data['country_name'] + '_' + data['year'].astype(str)
     data_2000 = data[data['year'] > 2000].iloc[:, 12:-1].dropna(axis=1)
 

@@ -1,7 +1,7 @@
 import torch
 from sklearn.metrics import accuracy_score
 
-from trainers import IndependentCBMTrainer, McbmJointTrainer, \
+from trainers import IndependentCBMTrainer, McbmTrainer, \
     SequentialCBMTrainer
 import importlib
 import copy
@@ -106,7 +106,7 @@ class MoMcbmTrainer:
         # Get the models used for leakage inspection
         arch = self.init_leakage_inspection_module(new_train_data_loader)
         config = copy.deepcopy(self.config)
-        expert_leakage_inspection = McbmJointTrainer(
+        expert_leakage_inspection = McbmTrainer(
             arch, config, self.device,
             new_train_data_loader, new_valid_data_loader,
             reg=None, expert=expert

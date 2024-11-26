@@ -1,5 +1,4 @@
 from sklearn.linear_model import SGDClassifier
-from sklearn.tree import DecisionTreeClassifier
 from torch import nn
 import torch
 import torch_explain as te
@@ -9,8 +8,146 @@ from networks.custom_chaid_tree import CHAIDTree
 from networks.custom_dt_gini_with_entropy_metrics import \
     CustomDecisionTree
 from networks.loss import CELoss, CustomConceptLoss, CELossWithEntropy
-from utils import flatten_dict_to_list
 
+
+class MNISTCBMArchitecture:
+    def __init__(self, config, device, hard_concepts=None, data_loader=None):
+
+        # Define the concept predictor
+        self.check_attribute_imbalance(config, data_loader, device)
+        self.concept_predictor = ConceptPredictor(config["dataset"]["num_concepts"])
+
+        # Define the label predictor
+        self.define_label_predictor(config)
+
+        # Combine the two into a main network
+        self.model = MainNetwork(self.concept_predictor, self.label_predictor)
+        self.check_if_pretrained_concept_predictor(config)
+
+        # Define loss functions and optimizers
+        self.criterion_concept = CustomConceptLoss(concept_names=config["dataset"]["concept_names"])
+        self.define_label_loss(config)
+        self.define_optimizer(config)
+        self.lr_scheduler = None
+        self.selected_concepts = [i for i in range(config["dataset"]["num_concepts"])]
+
+    def define_label_predictor(self, config):
+        concept_size = config["dataset"]["num_concepts"]
+        if 'entropy_layer' in config["model"]:
+            self.label_predictor = LabelPredictorEntropyNN(
+                concept_size=concept_size,
+                num_classes=config["dataset"]["num_classes"],
+                tau=config["model"]["tau"],
+                lm=config["model"]["lm"])
+        elif 'psi_layer' in config["model"]:
+            pass
+        elif 'lr_layer' in config["model"]:
+            self.label_predictor = LabelPredictorLR(
+                concept_size=concept_size,
+                num_classes=config["dataset"]["num_classes"]
+            )
+        elif 'nn_layer' in config["model"]:
+            self.label_predictor = LabelPredictorNN(
+                concept_size=config["dataset"]["num_concepts"],
+                num_classes=config["dataset"]["num_classes"]
+            )
+        elif 'elasticnet' in config["model"]:
+            self.label_predictor = SGDClassifier(
+                random_state=42, loss="log_loss",
+                alpha=1e-3, l1_ratio=0.99,
+                verbose=0, penalty="elasticnet",
+                max_iter=10000
+            )
+        elif 'tree_type' in config["model"]:
+            if config["model"]["tree_type"] == "binary":
+                self.label_predictor = CustomDecisionTree(
+                    min_samples_leaf=config["regularisation"][
+                        "min_samples_leaf"],
+                    n_classes=config["dataset"]["num_classes"],
+                    precision_round=False
+                )
+            elif config["model"]["tree_type"] == "chaid":
+                self.label_predictor = CHAIDTree(
+                    min_child_size=config["regularisation"]["min_samples_leaf"],
+                    n_classes=config["dataset"]["num_classes"],
+                    concept_names=config["dataset"]["concept_names"])
+            else:
+                raise ValueError("Please specify the type of label predictor to use")
+        else:
+            raise ValueError("Please specify the type of label predictor to use")
+
+    def check_attribute_imbalance(self, config, data_loader, device):
+        C_train = data_loader.dataset[:][1]
+        if "use_attribute_imbalance" in config["dataset"]:
+            if config["dataset"]["use_attribute_imbalance"]:
+                self.imbalance = torch.FloatTensor(
+                    find_class_imbalance_mnist(C_train)).to(device)
+            else:
+                self.imbalance = None
+        else:
+            self.imbalance = None
+
+    def define_label_loss(self, config):
+        if 'entropy_layer' in config["model"]:
+            self.criterion_label = CELossWithEntropy(
+                lm=config["model"]["lm"],
+                model=self.model.label_predictor.layers
+            )
+        else:
+            self.criterion_label = CELoss()
+
+    def check_if_pretrained_concept_predictor(self, config):
+        if "pretrained_concept_predictor" in config["model"]:
+            state_dict = torch.load(config["model"]["pretrained_concept_predictor"])["state_dict"]
+            # Create a new state dictionary for the concept predictor layers
+            concept_predictor_state_dict = {}
+
+            # Iterate through the original state dictionary and isolate concept predictor layers
+            for key, value in state_dict.items():
+                if key.startswith('concept_predictor'):
+                    # Remove the prefix "concept_predictor."
+                    new_key = key.replace('concept_predictor.', '')
+                    concept_predictor_state_dict[new_key] = value
+
+            self.model.concept_predictor.load_state_dict(concept_predictor_state_dict)
+            print("Loaded pretrained concept predictor from ",
+                  config["model"]["pretrained_concept_predictor"])
+
+            self.temperatures = None
+            if "temperature_scaling" in config["model"]:
+                if config["model"]["temperature_scaling"]:
+                    self.temperatures = torch.load(config["model"]["pretrained_concept_predictor"])["whole_model"]
+
+    def define_optimizer(self, config):
+        if "xc_weight_decay" in config["model"]:
+            xc_params_to_update = [
+                {'params': self.model.concept_predictor.parameters(),
+                 'weight_decay': config["model"]['xc_weight_decay']},
+            ]
+            self.xc_optimizer = torch.optim.Adam(xc_params_to_update,
+                                                 lr=config["model"]['xc_lr'])
+            if "tree_type" not in config["model"]:
+                cy_params_to_update = [
+                    {'params': self.model.label_predictor.parameters(),
+                     'weight_decay': config["model"]['cy_weight_decay']},
+                ]
+                self.cy_optimizer = torch.optim.Adam(cy_params_to_update,
+                                                     lr=config["model"]['cy_lr'])
+            else:
+                self.cy_optimizer = None
+
+        elif "weight_decay" in config["model"]:
+            params_to_update = [
+                {'params': self.model.concept_predictor.parameters(),
+                 'weight_decay': 0},
+                {'params': self.model.label_predictor.parameters(),
+                 'weight_decay': config["model"]['weight_decay']},
+            ]
+            self.optimizer = torch.optim.Adam(params_to_update, lr=config["model"]['lr'])
+        else:
+            self.optimizer = None
+            self.xc_optimizer = None
+            self.cy_optimizer = None
 
 class MNISTBlackBoxArchitecture:
     def __init__(self, config, device, hard_concepts=None, data_loader=None):
@@ -27,244 +164,6 @@ class MNISTBlackBoxArchitecture:
                                           lr=config["model"]['lr'])
         self.lr_scheduler = None
         self.selected_concepts = [i for i in range(config["dataset"]["num_concepts"])]
-
-class MNISTCBMwithSLRaslabelPredictorArchitecture:
-    def __init__(self, config, device, hard_concepts=None, data_loader=None):
-
-        if hard_concepts is None:
-            self.hard_concepts = []
-        else:
-            self.hard_concepts = hard_concepts
-
-        C_train = data_loader.dataset[:][1]
-        if "use_attribute_imbalance" in config["dataset"]:
-            if config["dataset"]["use_attribute_imbalance"]:
-                self.imbalance = torch.FloatTensor(find_class_imbalance_mnist(C_train)).to(device)
-            else:
-                self.imbalance = None
-        else:
-            self.imbalance = None
-
-        self.concept_predictor = ConceptPredictor(config["dataset"]["num_concepts"])
-        self.label_predictor = SGDClassifier(random_state=42, loss="log_loss",
-                                             alpha=1e-3, l1_ratio=0.99,
-                                             verbose=0,
-                                             penalty="elasticnet", max_iter=10000)
-        self.model = MainNetwork(self.concept_predictor, self.label_predictor)
-
-        if "pretrained_concept_predictor" in config["model"]:
-            state_dict = torch.load(config["model"]["pretrained_concept_predictor"])["state_dict"]
-            # Create a new state dictionary for the concept predictor layers
-            concept_predictor_state_dict = {}
-
-            # Iterate through the original state dictionary and isolate concept predictor layers
-            for key, value in state_dict.items():
-                if key.startswith('concept_predictor'):
-                    # Remove the prefix "concept_predictor."
-                    new_key = key.replace('concept_predictor.', '')
-                    concept_predictor_state_dict[new_key] = value
-
-            self.model.concept_predictor.load_state_dict(concept_predictor_state_dict)
-            print("Loaded pretrained concept predictor from ", config["model"]["pretrained_concept_predictor"])
-
-            self.temperatures = None
-            if "temperature_scaling" in config["model"]:
-                if config["model"]["temperature_scaling"]:
-                    self.temperatures = torch.load(config["model"]["pretrained_concept_predictor"])["whole_model"]
-
-        # Define loss functions and optimizers
-        self.criterion_concept = torch.nn.BCELoss(weight=self.imbalance)
-        self.criterion_per_concept = nn.BCELoss(reduction='none')
-
-        xc_params_to_update = [
-            {'params': self.model.concept_predictor.parameters(), 'weight_decay': config["model"]['xc_weight_decay']},
-        ]
-        self.xc_optimizer = torch.optim.Adam(xc_params_to_update, lr=config["model"]['xc_lr'])
-        self.cy_optimizer = None
-        self.lr_scheduler = None
-        self.selected_concepts = [i for i in range(config["dataset"]["num_concepts"])]
-
-class MNISTCBMwithDTaslabelPredictorArchitecture:
-    def __init__(self, config, device, hard_concepts=None, data_loader=None):
-
-        if hard_concepts is None:
-            self.hard_concepts = []
-        else:
-            self.hard_concepts = hard_concepts
-
-        C_train = data_loader.dataset[:][1]
-        if "use_attribute_imbalance" in config["dataset"]:
-            if config["dataset"]["use_attribute_imbalance"]:
-                self.imbalance = torch.FloatTensor(find_class_imbalance_mnist(C_train)).to(device)
-            else:
-                self.imbalance = None
-        else:
-            self.imbalance = None
-
-        self.concept_predictor = ConceptPredictor(config["dataset"]["num_concepts"])
-        if 'tree_type' in config["model"]:
-            if config["model"]["tree_type"] == "binary":
-                self.label_predictor = CustomDecisionTree(
-                    min_samples_leaf=config["regularisation"]["min_samples_leaf"],
-                    n_classes=config["dataset"]["num_classes"],
-                    precision_round=False
-                )
-        else:
-            self.label_predictor = CHAIDTree(min_child_size=config["regularisation"]["min_samples_leaf"],
-                                             n_classes=config["dataset"]["num_classes"],
-                                             concept_names=config["dataset"]["concept_names"])
-
-        self.model = MainNetwork(self.concept_predictor, self.label_predictor)
-
-        if "pretrained_concept_predictor" in config["model"]:
-            state_dict = torch.load(config["model"]["pretrained_concept_predictor"])["state_dict"]
-            # Create a new state dictionary for the concept predictor layers
-            concept_predictor_state_dict = {}
-
-            # Iterate through the original state dictionary and isolate concept predictor layers
-            for key, value in state_dict.items():
-                if key.startswith('concept_predictor'):
-                    # Remove the prefix "concept_predictor."
-                    new_key = key.replace('concept_predictor.', '')
-                    concept_predictor_state_dict[new_key] = value
-
-            self.model.concept_predictor.load_state_dict(concept_predictor_state_dict)
-            print("Loaded pretrained concept predictor from ", config["model"]["pretrained_concept_predictor"])
-
-            self.temperatures = None
-            if "temperature_scaling" in config["model"]:
-                if config["model"]["temperature_scaling"]:
-                    self.temperatures = torch.load(config["model"]["pretrained_concept_predictor"])["whole_model"]
-
-        if "pretrained_concept_predictor_joint" in config["model"]:
-            self.concept_predictor_joint = ConceptPredictor(config["dataset"]["num_concepts"])
-            state_dict = torch.load(config["model"]["pretrained_concept_predictor_joint"])["state_dict"]
-            # Create a new state dictionary for the concept predictor layers
-            concept_predictor_state_dict = {}
-
-            # Iterate through the original state dictionary and isolate concept predictor layers
-            for key, value in state_dict.items():
-                if key.startswith('concept_predictor'):
-                    # Remove the prefix "concept_predictor."
-                    new_key = key.replace('concept_predictor.', '')
-                    concept_predictor_state_dict[new_key] = value
-
-            self.concept_predictor_joint.load_state_dict(concept_predictor_state_dict)
-            print("Loaded pretrained concept predictor (joint training) from ", config["model"]["pretrained_concept_predictor_joint"])
-        else:
-            self.concept_predictor_joint = None
-
-        # Define loss functions and optimizers
-        concept_names = config["dataset"]["concept_names"]
-        self.criterion_concept = CustomConceptLoss(concept_names=concept_names)
-
-        xc_params_to_update = [
-            {'params': self.model.concept_predictor.parameters(), 'weight_decay': config["model"]['xc_weight_decay']},
-        ]
-        self.xc_optimizer = torch.optim.Adam(xc_params_to_update, lr=config["model"]['xc_lr'])
-        self.cy_optimizer = None
-        self.lr_scheduler = None
-        self.selected_concepts = [i for i in range(config["dataset"]["num_concepts"])]
-
-class MNISTCBMArchitecture:
-    def __init__(self, config, device, hard_concepts=None, data_loader=None):
-
-        if hard_concepts is None:
-            self.hard_concepts = []
-        else:
-            self.hard_concepts = hard_concepts
-
-        C_train = data_loader.dataset[:][1]
-        if "use_attribute_imbalance" in config["dataset"]:
-            if config["dataset"]["use_attribute_imbalance"]:
-                self.imbalance = torch.FloatTensor(find_class_imbalance_mnist(C_train)).to(device)
-            else:
-                self.imbalance = None
-        else:
-            self.imbalance = None
-
-        concept_size = config["dataset"]["num_concepts"] - len(self.hard_concepts)
-        self.concept_predictor = ConceptPredictor(concept_size)
-        if 'entropy_layer' in config["model"]:
-            self.label_predictor = LabelPredictorEntropyNN(concept_size=concept_size,
-                                                              num_classes=config["dataset"]["num_classes"],
-                                                              tau=config["model"]["tau"],
-                                                              lm=config["model"]["lm"])
-        elif 'psi_layer' in config["model"]:
-            pass
-        elif 'lr_layer' in config["model"]:
-            self.label_predictor = LabelPredictorLR(concept_size=concept_size,
-                                                    num_classes=config["dataset"]["num_classes"])
-        else:
-            self.label_predictor = LabelPredictorNN(concept_size=config["dataset"]["num_concepts"],
-                                                  num_classes=config["dataset"]["num_classes"])
-        self.model = MainNetwork(self.concept_predictor, self.label_predictor)
-
-        if "pretrained_concept_predictor" in config["model"]:
-            state_dict = torch.load(config["model"]["pretrained_concept_predictor"])["state_dict"]
-            # Create a new state dictionary for the concept predictor layers
-            concept_predictor_state_dict = {}
-
-            # Iterate through the original state dictionary and isolate concept predictor layers
-            for key, value in state_dict.items():
-                if key.startswith('concept_predictor'):
-                    # Remove the prefix "concept_predictor."
-                    new_key = key.replace('concept_predictor.', '')
-                    concept_predictor_state_dict[new_key] = value
-
-            self.model.concept_predictor.load_state_dict(concept_predictor_state_dict)
-            print("Loaded pretrained concept predictor from ", config["model"]["pretrained_concept_predictor"])
-
-            self.temperatures = None
-            if "temperature_scaling" in config["model"]:
-                if config["model"]["temperature_scaling"]:
-                    self.temperatures = torch.load(config["model"]["pretrained_concept_predictor"])["whole_model"]
-
-        # Define loss functions and optimizers
-        # self.criterion_concept = torch.nn.BCELoss(weight=self.imbalance)
-        concept_names = config["dataset"]["concept_names"]
-        self.criterion_concept = CustomConceptLoss(concept_names=concept_names)
-        if 'entropy_layer' in config["model"]:
-            self.criterion_label = CELossWithEntropy(lm=config["model"]["lm"],
-                                                     model=self.model.label_predictor.layers)
-        else:
-            self.criterion_label = CELoss()
-
-        if "weight_decay" not in config["model"]:
-            xc_params_to_update = [
-                {'params': self.model.concept_predictor.parameters(), 'weight_decay': config["model"]['xc_weight_decay']},
-            ]
-            self.xc_optimizer = torch.optim.Adam(xc_params_to_update, lr=config["model"]['xc_lr'])
-            cy_params_to_update = [
-                {'params': self.model.label_predictor.parameters(), 'weight_decay': config["model"]['cy_weight_decay']},
-            ]
-            self.cy_optimizer = torch.optim.Adam(cy_params_to_update, lr=config["model"]['cy_lr'])
-        else:
-            # only apply regularisation (if any) to the label predictor,
-            # for a fair comparison with Tree Regularisation
-            params_to_update = [
-                {'params': self.model.concept_predictor.parameters(),
-                 'weight_decay': 0},
-                {'params': self.model.label_predictor.parameters(),
-                 'weight_decay': config["model"]['weight_decay']},
-            ]
-            self.optimizer = torch.optim.Adam(params_to_update,
-                                              lr=config["model"]['lr'])
-
-        self.lr_scheduler = None
-        self.selected_concepts = [i for i in range(config["dataset"]["num_concepts"])]
-
-class MNISTCYArchitecture:
-    def __init__(self, config):
-
-        self.model = LabelPredictor(concept_size=config["dataset"]["num_features"],
-                                    num_classes=config["dataset"]["num_classes"])
-
-        # Define loss functions and optimizers
-        self.criterion = nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.Adam(self.model.parameters(),
-                                          lr=config["model"]['lr'],
-                                          weight_decay=config["model"]['weight_decay'])
 
 # Define the models
 # class ConceptPredictor(nn.Module):
